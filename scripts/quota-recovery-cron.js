@@ -13,9 +13,18 @@
 import quotaService from '../src/services/quota.service.js';
 import logger from '../src/utils/logger.js';
 import database from '../src/db/database.js';
+import config from '../src/config/config.js';
 
 async function runQuotaRecovery() {
   try {
+    // 初始化数据库连接
+    if (config.database) {
+      database.initialize(config.database);
+      logger.info('数据库连接已初始化');
+    } else {
+      throw new Error('配置文件中缺少数据库配置');
+    }
+    
     logger.info('开始执行配额池自动恢复任务...');
     
     const recoveredCount = await quotaService.recoverAllUserSharedQuotas();
@@ -23,7 +32,7 @@ async function runQuotaRecovery() {
     logger.info(`配额池自动恢复任务完成！恢复了 ${recoveredCount} 条记录`);
     
     // 关闭数据库连接
-    await database.end();
+    await database.close();
     
     process.exit(0);
   } catch (error) {
@@ -31,9 +40,9 @@ async function runQuotaRecovery() {
     
     // 关闭数据库连接
     try {
-      await database.end();
-    } catch (endError) {
-      logger.error('关闭数据库连接失败:', endError);
+      await database.close();
+    } catch (closeError) {
+      logger.error('关闭数据库连接失败:', closeError);
     }
     
     process.exit(1);
