@@ -151,9 +151,15 @@ class MultiAccountClient {
         account.access_token = tokenData.access_token;
         account.expires_at = expires_at;
       } catch (refreshError) {
-        // 刷新token失败，标记账号需要重新授权
-        logger.error(`账号刷新token失败，标记需要重新授权: cookie_id=${account.cookie_id}, error=${refreshError.message}`);
-        await accountService.markAccountNeedRefresh(account.cookie_id);
+        // 如果是 invalid_grant 错误，直接禁用账号
+        if (refreshError.isInvalidGrant) {
+          logger.error(`账号刷新token失败(invalid_grant)，禁用账号: cookie_id=${account.cookie_id}`);
+          await accountService.updateAccountStatus(account.cookie_id, 0);
+        } else {
+          // 其他错误，标记需要重新授权
+          logger.error(`账号刷新token失败，标记需要重新授权: cookie_id=${account.cookie_id}, error=${refreshError.message}`);
+          await accountService.markAccountNeedRefresh(account.cookie_id);
+        }
         
         // 尝试获取下一个可用账号
         const newExcludeList = [...excludeCookieIds, account.cookie_id];
@@ -383,10 +389,19 @@ class MultiAccountClient {
 
     // 检查token是否过期
     if (accountService.isTokenExpired(account)) {
-      const tokenData = await oauthService.refreshAccessToken(account.refresh_token);
-      const expires_at = Date.now() + (tokenData.expires_in * 1000);
-      await accountService.updateAccountToken(account.cookie_id, tokenData.access_token, expires_at);
-      account.access_token = tokenData.access_token;
+      try {
+        const tokenData = await oauthService.refreshAccessToken(account.refresh_token);
+        const expires_at = Date.now() + (tokenData.expires_in * 1000);
+        await accountService.updateAccountToken(account.cookie_id, tokenData.access_token, expires_at);
+        account.access_token = tokenData.access_token;
+      } catch (refreshError) {
+        // 如果是 invalid_grant 错误，直接禁用账号
+        if (refreshError.isInvalidGrant) {
+          logger.error(`账号刷新token失败(invalid_grant)，禁用账号: cookie_id=${account.cookie_id}`);
+          await accountService.updateAccountStatus(account.cookie_id, 0);
+        }
+        throw refreshError;
+      }
     }
 
     const modelsUrl = config.api.modelsUrl;

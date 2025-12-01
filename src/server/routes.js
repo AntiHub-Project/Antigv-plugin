@@ -597,10 +597,19 @@ router.get('/api/accounts/:cookie_id/quotas', authenticateApiKey, async (req, re
     // 检查token是否过期，如果过期则刷新
     if (accountService.isTokenExpired(account)) {
       logger.info(`账号token已过期，正在刷新: cookie_id=${cookie_id}`);
-      const tokenData = await oauthService.refreshAccessToken(account.refresh_token);
-      const expires_at = Date.now() + (tokenData.expires_in * 1000);
-      await accountService.updateAccountToken(cookie_id, tokenData.access_token, expires_at);
-      account.access_token = tokenData.access_token;
+      try {
+        const tokenData = await oauthService.refreshAccessToken(account.refresh_token);
+        const expires_at = Date.now() + (tokenData.expires_in * 1000);
+        await accountService.updateAccountToken(cookie_id, tokenData.access_token, expires_at);
+        account.access_token = tokenData.access_token;
+      } catch (refreshError) {
+        // 如果是 invalid_grant 错误，直接禁用账号
+        if (refreshError.isInvalidGrant) {
+          logger.error(`账号刷新token失败(invalid_grant)，禁用账号: cookie_id=${cookie_id}`);
+          await accountService.updateAccountStatus(cookie_id, 0);
+        }
+        throw refreshError;
+      }
     }
 
     // 从API获取最新配额信息
@@ -748,10 +757,21 @@ router.get('/api/quotas/shared-pool', authenticateApiKey, async (req, res) => {
           let accessToken = account.access_token;
           if (accountService.isTokenExpired(account)) {
             logger.info(`账号token已过期，正在刷新: cookie_id=${account.cookie_id}`);
-            const tokenData = await oauthService.refreshAccessToken(account.refresh_token);
-            const expires_at = Date.now() + (tokenData.expires_in * 1000);
-            await accountService.updateAccountToken(account.cookie_id, tokenData.access_token, expires_at);
-            accessToken = tokenData.access_token;
+            try {
+              const tokenData = await oauthService.refreshAccessToken(account.refresh_token);
+              const expires_at = Date.now() + (tokenData.expires_in * 1000);
+              await accountService.updateAccountToken(account.cookie_id, tokenData.access_token, expires_at);
+              accessToken = tokenData.access_token;
+            } catch (refreshError) {
+              // 如果是 invalid_grant 错误，直接禁用账号
+              if (refreshError.isInvalidGrant) {
+                logger.error(`账号刷新token失败(invalid_grant)，禁用账号: cookie_id=${account.cookie_id}`);
+                await accountService.updateAccountStatus(account.cookie_id, 0);
+              }
+              // 继续处理其他账号，不抛出错误
+              logger.warn(`刷新账号配额失败: cookie_id=${account.cookie_id}, error=${refreshError.message}`);
+              return;
+            }
           }
           
           // 刷新配额

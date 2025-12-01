@@ -314,6 +314,7 @@ class OAuthService {
               response_size: body.length
             };
             
+            let isInvalidGrant = false;
             try {
               const errorData = JSON.parse(body);
               errorInfo.error = errorData.error;
@@ -321,6 +322,7 @@ class OAuthService {
               
               // 特别处理 invalid_grant 错误
               if (errorData.error === 'invalid_grant') {
+                isInvalidGrant = true;
                 logger.error(`[${requestId}] Token刷新失败 - invalid_grant:`, {
                   ...errorInfo,
                   possible_causes: [
@@ -338,7 +340,10 @@ class OAuthService {
               logger.error(`[${requestId}] Token刷新失败:`, errorInfo);
             }
             
-            reject(new Error(`HTTP ${res.statusCode}: ${body}`));
+            // 创建错误对象，标记是否为 invalid_grant
+            const error = new Error(`HTTP ${res.statusCode}: ${body}`);
+            error.isInvalidGrant = isInvalidGrant;
+            reject(error);
           }
         });
       });
