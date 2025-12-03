@@ -73,14 +73,41 @@ async function generateProjectIdsForAllAccounts() {
         );
         
         logger.info(`  ✓ 项目ID已更新:`);
-        logger.info(`    project_id_0: ${updatedAccount.project_id_0 || '(空 - 地区受限)'}`);
+        logger.info(`    project_id_0: ${updatedAccount.project_id_0 || '(空)'}`);
         logger.info(`    is_restricted: ${updatedAccount.is_restricted}`);
+        logger.info(`    paidTier: ${JSON.stringify(updatedAccount.paidTier || [])}`);
+        logger.info(`    当前状态: ${updatedAccount.status === 1 ? '启用' : '禁用'}`);
         
-        // 如果project_id_0为空，禁用账号
-        if (!updatedAccount.project_id_0) {
-          logger.warn(`  ⚠ project_id_0为空，正在禁用账号...`);
-          await accountService.updateAccountStatus(account.cookie_id, 0);
-          logger.info(`  ✓ 账号已禁用`);
+        // 判断账号是否应该可用
+        const hasFree = updatedAccount.paidTier && updatedAccount.paidTier.some(
+          tier => tier.id === 'free'
+        );
+        
+        // 账号可用条件：
+        // 1. project_id_0 不为空
+        // 2. project_id_0 为空但 paidTier 不含 "free"
+        const shouldBeEnabled = updatedAccount.project_id_0 || !hasFree;
+        
+        if (shouldBeEnabled) {
+          // 账号应该可用
+          if (updatedAccount.status === 0) {
+            // 如果当前是禁用状态，启用它
+            logger.info(`  ℹ 账号符合可用条件，正在启用...`);
+            await accountService.updateAccountStatus(account.cookie_id, 1);
+            logger.info(`  ✓ 账号已启用`);
+          } else {
+            logger.info(`  ℹ 账号符合可用条件且已启用`);
+          }
+        } else {
+          // 账号应该禁用（project_id_0为空且paidTier包含free）
+          if (updatedAccount.status === 1) {
+            // 如果当前是启用状态，禁用它
+            logger.warn(`  ⚠ project_id_0为空且paidTier包含free，正在禁用账号...`);
+            await accountService.updateAccountStatus(account.cookie_id, 0);
+            logger.info(`  ✓ 账号已禁用`);
+          } else {
+            logger.info(`  ℹ 账号不符合可用条件且已禁用`);
+          }
         }
         
         successCount++;

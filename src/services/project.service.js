@@ -89,7 +89,11 @@ class ProjectService {
         ineligible
       );
       
-      return updatedAccount;
+      // 返回更新后的账号信息，并附加paidTier信息用于判断
+      return {
+        ...updatedAccount,
+        paidTier: apiResponse.paidTier || []
+      };
     } catch (error) {
       throw error;
     }

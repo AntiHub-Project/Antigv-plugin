@@ -446,17 +446,27 @@ class OAuthService {
       
       // 检查是否有cloudaicompanionProject
       if (!projectData.cloudaicompanionProject) {
-        // 确定失败原因
-        let reason = 'UNKNOWN_ERROR';
-        if (projectData.ineligibleTiers && projectData.ineligibleTiers.length > 0) {
-          // 如果有ineligibleTiers，使用第一个reasonCode
-          reason = projectData.ineligibleTiers[0].reasonCode || 'UNKNOWN_ERROR';
-        }
+        // 检查paidTier中是否包含free
+        const hasFree = projectData.paidTier && projectData.paidTier.some(
+          tier => tier.id === 'free'
+        );
         
-        ineligible = reason;
-        logger.error(`账号缺少cloudaicompanionProject: cookie_id=${cookie_id}, reason=${reason}`);
-        this.stateMap.delete(state);
-        throw new Error(`此账号没有资格使用Antigravity: ${reason}`);
+        if (hasFree) {
+          // 如果有free tier，则阻止登录
+          let reason = 'UNKNOWN_ERROR';
+          if (projectData.ineligibleTiers && projectData.ineligibleTiers.length > 0) {
+            // 如果有ineligibleTiers，使用第一个reasonCode
+            reason = projectData.ineligibleTiers[0].reasonCode || 'UNKNOWN_ERROR';
+          }
+          
+          ineligible = reason;
+          logger.error(`账号缺少cloudaicompanionProject且有free tier: cookie_id=${cookie_id}, reason=${reason}`);
+          this.stateMap.delete(state);
+          throw new Error(`此账号没有资格使用Antigravity: ${reason}`);
+        } else {
+          // 没有free tier，允许登录但project_id_0为空
+          logger.info(`账号缺少cloudaicompanionProject但无free tier，允许登录: cookie_id=${cookie_id}`);
+        }
       }
       
       // 获取project_id_0
