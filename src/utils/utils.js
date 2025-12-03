@@ -453,6 +453,12 @@ function injectSignatures(contents, signatures) {
 }
 
 async function generateRequestBody(openaiMessages, modelName, parameters, openaiTools, user_id = null, account = null){
+  // Gemini 2.5 Flash Thinking 路由到 Gemini 2.5 Flash
+  let actualModelName = modelName;
+  if (modelName === 'gemini-2.5-flash-thinking') {
+    actualModelName = 'gemini-2.5-flash';
+  }
+  
   const enableThinking = modelName.endsWith('-thinking') ||
     modelName === 'gemini-2.5-pro' ||
     modelName.startsWith('gemini-3-pro-') ||
@@ -460,7 +466,7 @@ async function generateRequestBody(openaiMessages, modelName, parameters, openai
     modelName === "gpt-oss-120b-medium"
   
   // 用于生成配置的基础模型名（去掉-thinking后缀用于某些配置判断）
-  const baseModelName = modelName.endsWith('-thinking') ? modelName.slice(0, -9) : modelName;
+  const baseModelName = actualModelName.endsWith('-thinking') ? actualModelName.slice(0, -9) : actualModelName;
   
   // 检测并拒绝不支持的模型类型
   const isChatModel = baseModelName.startsWith('chat_');  // chat_ 开头的内部补全模型
@@ -512,7 +518,7 @@ async function generateRequestBody(openaiMessages, modelName, parameters, openai
         parts: [{ text: config.systemInstruction }]
       }
     },
-    model: modelName,
+    model: actualModelName,
     userAgent: "antigravity"
   };
   
