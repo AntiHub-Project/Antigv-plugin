@@ -421,8 +421,9 @@ function convertOpenAIToolsToAntigravity(openaiTools){
  * 将存储的 signatures 注入到 contents 中
  * @param {Array} contents - Antigravity 格式的消息数组
  * @param {Array} signatures - 存储的 signature 数组
+ * @param {boolean} enableThinking - 是否启用 thinking 模式
  */
-function injectSignatures(contents, signatures) {
+function injectSignatures(contents, signatures, enableThinking = false) {
   if (!contents || !signatures || signatures.length === 0) {
     return;
   }
@@ -433,6 +434,22 @@ function injectSignatures(contents, signatures) {
     return;
   }
   
+  // 如果是 thinking 模式，需要确保最后一条助手消息的所有文本部分都标记为 thought: true
+  if (enableThinking) {
+    for (let i = 0; i < lastModelMessage.parts.length; i++) {
+      const part = lastModelMessage.parts[i];
+      // 只处理文本部分，不处理 functionCall
+      if (part.text !== undefined && !part.functionCall) {
+        // 强制设置为 thought: true（覆盖之前的 thought: false）
+        part.thought = true;
+        // 如果还没有 thoughtSignature，添加空字符串
+        if (part.thoughtSignature === undefined) {
+          part.thoughtSignature = "";
+        }
+      }
+    }
+  }
+  
   // 注入 signatures 到对应的 parts
   for (const sig of signatures) {
     if (sig.type === 'functionCall' && sig.functionId) {
@@ -440,13 +457,14 @@ function injectSignatures(contents, signatures) {
       const part = lastModelMessage.parts.find(p =>
         p.functionCall && p.functionCall.id === sig.functionId
       );
-      if (part && !part.thoughtSignature) {
+      if (part && part.thoughtSignature !== undefined) {
         part.thoughtSignature = sig.signature;
       }
     } else if (sig.type === 'text' && sig.index !== undefined) {
       // 根据索引注入到对应的 text part
-      if (lastModelMessage.parts[sig.index] && !lastModelMessage.parts[sig.index].thoughtSignature) {
-        lastModelMessage.parts[sig.index].thoughtSignature = sig.signature;
+      const part = lastModelMessage.parts[sig.index];
+      if (part && part.thoughtSignature !== undefined) {
+        part.thoughtSignature = sig.signature;
       }
     }
   }
@@ -493,7 +511,10 @@ async function generateRequestBody(openaiMessages, modelName, parameters, openai
   
   // 如果有存储的 signatures，注入到对应的 parts 中
   if (storedSignatures && storedSignatures.length > 0) {
-    injectSignatures(contents, storedSignatures);
+    injectSignatures(contents, storedSignatures, enableThinking);
+  } else if (enableThinking) {
+    // 即使没有 signatures，也要确保 thinking 模式下最后一条助手消息标记正确
+    injectSignatures(contents, [], enableThinking);
   }
   
   // 优先使用账号的 project_id_0，如果不存在则随机生成
@@ -531,8 +552,8 @@ async function generateRequestBody(openaiMessages, modelName, parameters, openai
     };
   }
   
-  // 不在这里打印请求体，因为projectId可能会在generateResponse中被修改
-  // 打印请求体的逻辑移到generateResponse中，在选择projectId之后
+  // 打印请求体
+  logger.info('发送给上游的请求体:', JSON.stringify(requestBody, null, 2));
   
   return requestBody;
 }
