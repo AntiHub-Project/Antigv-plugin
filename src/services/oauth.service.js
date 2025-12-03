@@ -517,6 +517,12 @@ class OAuthService {
     
     logger.info(`配额获取完成: cookie_id=${cookie_id}, 共${Object.keys(mergedModels).length}个模型`);
 
+    // 判断是否为付费用户
+    let paid_tier = null;
+    if (projectData.paidTier?.id) {
+      paid_tier = projectData.paidTier.id !== 'free' && projectData.paidTier.id !== 'free-tier';
+    }
+
     // 第三步：创建账号
     const account = await accountService.createAccount({
       cookie_id,
@@ -528,7 +534,8 @@ class OAuthService {
       project_id_0,
       is_restricted,
       ineligible,
-      name: accountName
+      name: accountName,
+      paid_tier
     });
 
     // 更新model_quotas表

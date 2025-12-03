@@ -75,7 +75,8 @@ async function generateProjectIdsForAllAccounts() {
         logger.info(`  ✓ 项目ID已更新:`);
         logger.info(`    project_id_0: ${updatedAccount.project_id_0 || '(空)'}`);
         logger.info(`    is_restricted: ${updatedAccount.is_restricted}`);
-        logger.info(`    paidTier: ${JSON.stringify(updatedAccount.paidTier || [])}`);
+        logger.info(`    paid_tier: ${updatedAccount.paid_tier === true ? '付费' : updatedAccount.paid_tier === false ? '免费' : '未知'}`);
+        logger.info(`    paidTier: ${JSON.stringify(updatedAccount.paidTier || null)}`);
         logger.info(`    当前状态: ${updatedAccount.status === 1 ? '启用' : '禁用'}`);
         
         // 判断账号是否应该可用

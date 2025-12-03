@@ -24,18 +24,19 @@ class AccountService {
       project_id_0 = '',
       is_restricted = false,
       ineligible = false,
-      name = null
+      name = null,
+      paid_tier = null
     } = accountData;
 
     try {
       const result = await database.query(
-        `INSERT INTO accounts (cookie_id, user_id, is_shared, access_token, refresh_token, expires_at, status, project_id_0, is_restricted, ineligible, name)
-         VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10)
+        `INSERT INTO accounts (cookie_id, user_id, is_shared, access_token, refresh_token, expires_at, status, project_id_0, is_restricted, ineligible, name, paid_tier)
+         VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10, $11)
          RETURNING *`,
-        [cookie_id, user_id, is_shared, access_token, refresh_token, expires_at, project_id_0, is_restricted, ineligible, name]
+        [cookie_id, user_id, is_shared, access_token, refresh_token, expires_at, project_id_0, is_restricted, ineligible, name, paid_tier]
       );
 
-      logger.info(`账号创建成功: cookie_id=${cookie_id}, user_id=${user_id}, name=${name || '(未设置)'}`);
+      logger.info(`账号创建成功: cookie_id=${cookie_id}, user_id=${user_id}, name=${name || '(未设置)'}, paid_tier=${paid_tier}`);
       return result.rows[0];
     } catch (error) {
       logger.error('创建账号失败:', error.message);
@@ -267,23 +268,24 @@ class AccountService {
    * @param {string} project_id_0 - Google Cloud项目ID
    * @param {boolean} is_restricted - 是否受地区限制
    * @param {boolean} ineligible - 是否不合格（INELIGIBLE_ACCOUNT）
+   * @param {boolean|null} paid_tier - 是否付费用户（true=付费, false=免费, null=未知）
    * @returns {Promise<Object>} 更新后的账号信息
    */
-  async updateProjectIds(cookie_id, project_id_0, is_restricted, ineligible = false) {
+  async updateProjectIds(cookie_id, project_id_0, is_restricted, ineligible = false, paid_tier = null) {
     try {
       const result = await database.query(
         `UPDATE accounts
-         SET project_id_0 = $1, is_restricted = $2, ineligible = $3, updated_at = CURRENT_TIMESTAMP
-         WHERE cookie_id = $4
+         SET project_id_0 = $1, is_restricted = $2, ineligible = $3, paid_tier = $4, updated_at = CURRENT_TIMESTAMP
+         WHERE cookie_id = $5
          RETURNING *`,
-        [project_id_0, is_restricted, ineligible, cookie_id]
+        [project_id_0, is_restricted, ineligible, paid_tier, cookie_id]
       );
 
       if (result.rows.length === 0) {
         throw new Error(`账号不存在: cookie_id=${cookie_id}`);
       }
 
-      logger.info(`账号project_id已更新: cookie_id=${cookie_id}, project_id_0=${project_id_0}, is_restricted=${is_restricted}, ineligible=${ineligible}`);
+      logger.info(`账号project_id已更新: cookie_id=${cookie_id}, project_id_0=${project_id_0}, is_restricted=${is_restricted}, ineligible=${ineligible}, paid_tier=${paid_tier}`);
       return result.rows[0];
     } catch (error) {
       logger.error('更新账号project_id失败:', error.message);

@@ -81,18 +81,25 @@ class ProjectService {
       // 只要有 cloudaicompanionProject，就填入 project_id_0
       const project_id_0 = apiResponse.cloudaicompanionProject || '';
       
+      // 判断是否为付费用户：paidTier.id 不是 'free' 或 'free-tier' 则为付费用户
+      let paid_tier = null;
+      if (apiResponse.paidTier?.id) {
+        paid_tier = apiResponse.paidTier.id !== 'free' && apiResponse.paidTier.id !== 'free-tier';
+      }
+      
       // 更新数据库
       const updatedAccount = await accountService.updateProjectIds(
         cookie_id,
         project_id_0,
         is_restricted,
-        ineligible
+        ineligible,
+        paid_tier
       );
       
-      // 返回更新后的账号信息，并附加paidTier信息用于判断
+      // 返回更新后的账号信息，并附加paidTier完整对象用于判断
       return {
         ...updatedAccount,
-        paidTier: apiResponse.paidTier || []
+        paidTier: apiResponse.paidTier || null
       };
     } catch (error) {
       throw error;
