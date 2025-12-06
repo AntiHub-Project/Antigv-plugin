@@ -765,6 +765,10 @@ router.get('/v1/kiro/models', authenticateApiKey, async (req, res) => {
  * Body: { messages, model, stream, tools, ... }
  */
 router.post('/v1/kiro/chat/completions', authenticateApiKey, async (req, res) => {
+  // 设置10分钟超时（避免长对话被断开）
+  req.setTimeout(600000); // 10分钟 = 600000毫秒
+  res.setTimeout(600000);
+
   const { messages, model, stream = true, tools, tool_choice } = req.body;
 
   if (!messages) {

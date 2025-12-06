@@ -215,7 +215,41 @@ export async function generateImage(requestBody) {
     throw error;
   }
 
-  // 解析响应
-  const data = await response.json();
+  // 解析响应 (处理 SSE 流式格式)
+  const responseText = await response.text();
+  const lines = responseText.split('\n');
+  let collectedParts = [];
+  let lastFinishReason = null;
+
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const jsonStr = line.slice(6);
+      try {
+        const chunk = JSON.parse(jsonStr);
+        const parts = chunk.response?.candidates?.[0]?.content?.parts;
+        if (parts) {
+          collectedParts.push(...parts);
+        }
+        if (chunk.response?.candidates?.[0]?.finishReason) {
+          lastFinishReason = chunk.response.candidates[0].finishReason;
+        }
+      } catch (e) {
+        // 忽略解析错误
+      }
+    }
+  }
+
+  // 构造标准的 Gemini 响应格式
+  const data = {
+    candidates: [
+      {
+        content: {
+          parts: collectedParts,
+          role: 'model'
+        },
+        finishReason: lastFinishReason || 'STOP'
+      }
+    ]
+  };
   return data;
 }

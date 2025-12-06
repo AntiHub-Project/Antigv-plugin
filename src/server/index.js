@@ -58,6 +58,10 @@ const server = app.listen(config.server.port, config.server.host, () => {
   logger.info(`服务器已启动: ${config.server.host}:${config.server.port}`);
 });
 
+// 设置服务器超时时间为10分钟（默认通常是2分钟）
+// 这对于流式响应和长任务非常重要
+server.setTimeout(600000);
+
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
     logger.error(`端口 ${config.server.port} 已被占用`);

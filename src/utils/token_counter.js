@@ -200,7 +200,10 @@ export function countStringTokens(text, model) {
     encoding = get_encoding('cl100k_base');
   }
 
-  const tokens = encoding.encode(text);
+  // 🔥 修复：允许特殊 token，避免 "special token not allowed" 错误
+  // 文本中可能包含 <|endoftext|> 等特殊 token（来自 stopSequences 配置）
+  // tiktoken 默认不允许这些特殊 token，需要显式设置 allowedSpecial
+  const tokens = encoding.encode(text, 'all');  // 'all' 允许所有特殊 token
   const count = tokens.length;
   encoding.free();
   
