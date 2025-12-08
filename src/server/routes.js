@@ -1112,6 +1112,14 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
         res.end();
       } catch (error) {
         logger.error('Kiro生成响应失败:', error.message);
+        
+        // 尝试转储错误现场（跳过常见错误）
+        const skipDumpPatterns = ['Requested entity was not found', 'Prompt is too long', 'ILLEGAL_PROMPT'];
+        const shouldSkipDump = skipDumpPatterns.some(pattern => error.message?.includes(pattern));
+        if (!shouldSkipDump) {
+          await dumpErrorArtifacts(req.body, { model, messages, options }, null, error.message);
+        }
+
         res.write(`data: ${JSON.stringify({
           id,
           object: 'chat.completion.chunk',
@@ -1161,6 +1169,14 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
         });
       } catch (error) {
         logger.error('Kiro生成响应失败:', error.message);
+        
+        // 尝试转储错误现场（跳过常见错误）
+        const skipDumpPatterns = ['Requested entity was not found', 'Prompt is too long', 'ILLEGAL_PROMPT'];
+        const shouldSkipDump = skipDumpPatterns.some(pattern => error.message?.includes(pattern));
+        if (!shouldSkipDump) {
+          await dumpErrorArtifacts(req.body, { model, messages, options }, null, error.message);
+        }
+
         res.status(500).json({ error: error.message });
       }
     }
@@ -1427,12 +1443,43 @@ router.post('/v1/chat/completions', authenticateApiKey, async (req, res) => {
 /**
  * Gemini 图片生成接口
  * POST /v1beta/models/{model}:generateContent
+ * POST /v1beta/models/{model}:streamGenerateContent
  * Body: { contents, generationConfig }
+ *
+ * 使用 SSE 心跳保活机制避免 Cloudflare 100秒超时
+ * 每30秒发送一个心跳注释，最后发送完整的 JSON 结果
+ *
+ * 注意：streamGenerateContent 和 generateContent 使用相同的处理逻辑
  */
-router.post('/v1beta/models/:model\\:generateContent', authenticateApiKey, async (req, res) => {
+const handleGeminiImageGeneration = async (req, res) => {
   // 设置10分钟超时（图片生成可能需要较长时间）
   req.setTimeout(600000); // 10分钟 = 600000毫秒
   res.setTimeout(600000);
+  
+  // 设置 SSE 响应头，用于心跳保活
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // 禁用 nginx 缓冲
+
+  // 心跳定时器，每30秒发送一个注释保持连接
+  const heartbeatInterval = setInterval(() => {
+    try {
+      res.write(': heartbeat\n\n');
+    } catch (e) {
+      // 忽略写入错误（连接可能已关闭）
+    }
+  }, 30000);
+
+  // 清理函数
+  const cleanup = () => {
+    clearInterval(heartbeatInterval);
+  };
+
+  // 监听连接关闭
+  req.on('close', cleanup);
+  
+  let requestBody = null;
   
   try {
     const { model } = req.params;
@@ -1440,35 +1487,52 @@ router.post('/v1beta/models/:model\\:generateContent', authenticateApiKey, async
 
     // 验证必需参数
     if (!contents || !Array.isArray(contents) || contents.length === 0) {
-      return res.status(400).json({
+      cleanup();
+      res.write(`data: ${JSON.stringify({
         error: {
           code: 400,
           message: 'contents是必需的且必须是非空数组',
           status: 'INVALID_ARGUMENT'
         }
-      });
+      })}\n\n`);
+      res.end();
+      return;
     }
 
-    // 提取提示词（从第一个用户消息中）
+    // 提取提示词和图片（从用户消息中）
     let prompt = '';
+    const images = [];
+    
     for (const content of contents) {
       if (content.role === 'user' && content.parts) {
         for (const part of content.parts) {
           if (part.text) {
             prompt += part.text;
+          } else if (part.inlineData) {
+            // Gemini 原生格式的图片数据
+            images.push({
+              inlineData: {
+                mimeType: part.inlineData.mimeType,
+                data: part.inlineData.data
+              }
+            });
           }
         }
       }
     }
 
-    if (!prompt) {
-      return res.status(400).json({
+    // 至少需要文本提示词或图片
+    if (!prompt && images.length === 0) {
+      cleanup();
+      res.write(`data: ${JSON.stringify({
         error: {
           code: 400,
-          message: '未找到有效的文本提示词',
+          message: '未找到有效的文本提示词或图片',
           status: 'INVALID_ARGUMENT'
         }
-      });
+      })}\n\n`);
+      res.end();
+      return;
     }
 
     // 提取 imageConfig 参数
@@ -1485,9 +1549,9 @@ router.post('/v1beta/models/:model\\:generateContent', authenticateApiKey, async
     // 获取账号信息
     const account = await multiAccountClient.getAvailableAccount(req.user.user_id, model, req.user);
     
-    // 生成请求体
+    // 生成请求体（包含图片数据用于图生图/图片编辑）
     const { generateImageRequestBody } = await import('../utils/utils.js');
-    const requestBody = generateImageRequestBody(prompt, model, imageConfig, account);
+    requestBody = generateImageRequestBody(prompt, model, imageConfig, account, images);
 
     // 调用图片生成API
     const data = await multiAccountClient.generateImage(
@@ -1498,19 +1562,41 @@ router.post('/v1beta/models/:model\\:generateContent', authenticateApiKey, async
       account
     );
 
-    // 返回 Gemini 格式的响应
-    res.json(data);
+    // 清理心跳定时器
+    cleanup();
+
+    // 返回 Gemini 格式的响应（通过 SSE data 事件）
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    res.end();
   } catch (error) {
+    // 清理心跳定时器
+    cleanup();
+
     logger.error('图片生成失败:', error.message);
+    
+    // 尝试转储错误现场（跳过常见错误）
+    const skipDumpPatterns = ['Requested entity was not found', 'Prompt is too long', 'ILLEGAL_PROMPT'];
+    const shouldSkipDump = skipDumpPatterns.some(pattern =>
+      error.message?.includes(pattern) || error.responseText?.includes(pattern)
+    );
+    if (error.name === 'ApiError' && error.responseText && !shouldSkipDump) {
+      await dumpErrorArtifacts(req.body, requestBody, error.responseText, error.message);
+    }
+
     const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({
+    res.write(`data: ${JSON.stringify({
       error: {
         code: statusCode,
         message: error.message,
         status: 'INTERNAL'
       }
-    });
+    })}\n\n`);
+    res.end();
   }
-});
+};
+
+// 注册 Gemini 图片生成路由（支持两种端点）
+router.post('/v1beta/models/:model\\:generateContent', authenticateApiKey, handleGeminiImageGeneration);
+router.post('/v1beta/models/:model\\:streamGenerateContent', authenticateApiKey, handleGeminiImageGeneration);
 
 export default router;

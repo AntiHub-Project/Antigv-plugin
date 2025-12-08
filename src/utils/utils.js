@@ -364,14 +364,45 @@ function openaiMessageToAntigravity(openaiMessages, enableThinking, isCompletion
   const antigravityMessages = [];
   const isImageModel = modelName.endsWith('-image');
 
+  // 对于思考模型，检查最后一条助手消息是否有思考内容
+  // 如果没有，需要使用特殊的 signature 来跳过验证
+  let effectiveSignature = signature;
+  if (enableThinking && !isImageModel) {
+    // 找到最后一条助手消息
+    let lastAssistantMessage = null;
+    for (let i = filteredMessages.length - 1; i >= 0; i--) {
+      if (filteredMessages[i].role === 'assistant') {
+        lastAssistantMessage = filteredMessages[i];
+        break;
+      }
+    }
+
+    // 检查最后一条助手消息是否有思考内容
+    if (lastAssistantMessage) {
+      const content = typeof lastAssistantMessage.content === 'string'
+        ? lastAssistantMessage.content
+        : (Array.isArray(lastAssistantMessage.content)
+            ? lastAssistantMessage.content.filter(c => c.type === 'text').map(c => c.text).join('')
+            : '');
+      
+      const hasThinkingContent = /<think>[\s\S]*?<\/think>/.test(content);
+      
+      // 如果最后一条助手消息没有思考内容，使用特殊 signature
+      if (!hasThinkingContent) {
+        effectiveSignature = "skip_thought_signature_validator";
+        logger.info('最后一条助手消息没有思考内容，使用 skip_thought_signature_validator');
+      }
+    }
+  }
+
   for (const message of filteredMessages) {
     if (message.role === "user" || message.role === "system") {
       const extracted = extractImagesFromContent(message.content);
       handleUserMessage(extracted, antigravityMessages, enableThinking);
     } else if (message.role === "assistant") {
-      handleAssistantMessage(message, antigravityMessages, isImageModel, enableThinking, signature);
+      handleAssistantMessage(message, antigravityMessages, isImageModel, enableThinking, effectiveSignature);
     } else if (message.role === "tool") {
-      handleToolCall(message, antigravityMessages, enableThinking, signature);
+      handleToolCall(message, antigravityMessages, enableThinking, effectiveSignature);
     }
   }
 
@@ -630,9 +661,10 @@ async function generateRequestBody(openaiMessages, modelName, parameters, openai
  * @param {string} modelName - 模型名称
  * @param {Object} imageConfig - 图片配置参数
  * @param {Object} account - 账号对象（可选，包含project_id_0）
+ * @param {Array} images - 图片数组（可选，用于图生图/图片编辑），格式为 [{ inlineData: { mimeType, data } }]
  * @returns {Object} 请求体
  */
-function generateImageRequestBody(prompt, modelName, imageConfig = {}, account = null) {
+function generateImageRequestBody(prompt, modelName, imageConfig = {}, account = null, images = []) {
   // 优先使用账号的 project_id_0，如果不存在则随机生成
   let projectId = generateProjectId();
   if (account) {
@@ -643,6 +675,24 @@ function generateImageRequestBody(prompt, modelName, imageConfig = {}, account =
     }
   }
 
+  // 构建 parts 数组：文本 + 图片
+  const parts = [];
+  
+  // 添加文本提示词
+  if (prompt) {
+    parts.push({ text: prompt });
+  }
+  
+  // 添加图片（用于图生图/图片编辑）
+  if (images && images.length > 0) {
+    parts.push(...images);
+  }
+
+  // 确保 parts 不为空
+  if (parts.length === 0) {
+    parts.push({ text: "" });
+  }
+
   const requestBody = {
     project: projectId,
     requestId: generateRequestId(),
@@ -650,11 +700,7 @@ function generateImageRequestBody(prompt, modelName, imageConfig = {}, account =
       contents: [
         {
           role: "user",
-          parts: [
-            {
-              text: prompt
-            }
-          ]
+          parts: parts
         }
       ],
       generationConfig: {
