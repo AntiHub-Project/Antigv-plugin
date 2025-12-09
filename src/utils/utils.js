@@ -610,14 +610,17 @@ async function generateRequestBody(openaiMessages, modelName, parameters, openai
   }
 
   // 检查是否需要强制禁用 thinking
-  // 对于思考模型，只有在以下情况才禁用 thinking 功能：
+  // 对于非 Gemini 的思考模型（如 Claude），只有在以下情况才禁用 thinking 功能：
   // 1. 最后一条助手消息没有思考内容
   // 2. 且没有存储的 signature 可用于注入
   // 如果有存储的 signature，可以通过注入来满足 API 要求，不需要禁用
+  // 注意：Gemini 模型不需要强制禁用思考，因为它可以处理没有思考内容的情况
+  const isGeminiModel = baseModelName.startsWith('gemini-');
   let forceDisableThinking = false;
-  if (enableThinking && !isImageModel) {
+  if (enableThinking && !isImageModel && !isGeminiModel) {
     const hasThinkingContent = hasThinkingContentInLastAssistant(openaiMessages);
     if (!hasThinkingContent && !storedSignature) {
+      logger.info('最后一条助手消息没有思考内容且没有存储的 signature，禁用 thinking 功能');
       forceDisableThinking = true;
     }
   }
