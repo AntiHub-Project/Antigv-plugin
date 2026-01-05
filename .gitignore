@@ -26,3 +26,12 @@ pnpm-lock.yaml
 test/*
 migrations/
 errordump*
+
+# AI
+.claude/
+.gemini/
+.codex/
+.cursor/
+
+# Docs
+Docs/

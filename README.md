@@ -362,6 +362,85 @@ node scripts/quota-recovery-cron.js
    - 自动负载均衡和故障转移
    - 建议根据使用量调整数据库连接池大小
 
+## 🐳 Docker 部署
+
+### 使用 Docker Compose（推荐）
+
+```bash
+# 1. 复制环境变量模板
+cp env.example .env
+
+# 2. 修改环境变量配置
+vim .env
+
+# 3. 启动服务（PostgreSQL 会自动启动，Redis 连接外部实例）
+docker-compose up -d postgres app
+
+# 4. 查看日志
+docker-compose logs -f app
+```
+
+### 生产环境部署
+
+生产环境建议使用现有的 PostgreSQL 和 Redis 实例：
+
+```bash
+# 1. 构建镜像
+docker build -t anticloud-api .
+
+# 2. 运行容器（连接现有的数据库和 Redis）
+docker run -d \
+  --name anticloud-api \
+  -p 8045:8045 \
+  -e DB_HOST=your-postgres-host \
+  -e DB_PORT=5432 \
+  -e DB_NAME=antigv \
+  -e DB_USER=postgres \
+  -e DB_PASSWORD=your-password \
+  -e REDIS_HOST=your-redis-host \
+  -e REDIS_PORT=6379 \
+  -e REDIS_PASSWORD=your-redis-password \
+  -e OAUTH_CALLBACK_URL=https://your-domain.com/api/oauth/callback \
+  -e ADMIN_API_KEY=sk-admin-your-secret-key \
+  anticloud-api
+```
+
+### 环境变量说明
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `PORT` | 服务端口 | 8045 |
+| `DB_HOST` | PostgreSQL 主机 | - |
+| `DB_PORT` | PostgreSQL 端口 | 5432 |
+| `DB_NAME` | 数据库名称 | - |
+| `DB_USER` | 数据库用户名 | - |
+| `DB_PASSWORD` | 数据库密码 | - |
+| `REDIS_HOST` | Redis 主机 | localhost |
+| `REDIS_PORT` | Redis 端口 | 6379 |
+| `REDIS_PASSWORD` | Redis 密码 | - |
+| `OAUTH_CALLBACK_URL` | OAuth 回调地址 | - |
+| `ADMIN_API_KEY` | 管理员 API Key | - |
+
+### 多项目共用 Redis
+
+本项目的 Redis 仅用于存储 Kiro OAuth 状态（临时数据，10分钟过期），可以安全地与前端、后端等其他项目共用同一个 Redis 实例。
+
+每个项目使用不同的 key prefix，互不干扰：
+- **AntiHub-plugin**: `kiro:oauth:state:*`
+- 其他项目: 使用各自的 prefix
+
+### 自定义配置文件
+
+可以挂载自定义 `config.json` 配置文件：
+
+```bash
+docker run -d \
+  --name anticloud-api \
+  -p 8045:8045 \
+  -v ./config.json:/app/config.json:ro \
+  anticloud-api
+```
+
 ## 📄 许可证
 
 MIT License
