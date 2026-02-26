@@ -2,58 +2,6 @@ import { randomUUID } from 'crypto';
 import config from '../config/config.js';
 import logger from './logger.js';
 
-// 需要 dump 请求的用户 ID 列表
-const DEBUG_USER_IDS = ['76aaa45f-5079-45c4-9c74-36f5c5b10cb1', '97001ad7-1b26-4244-84dc-aa7f11804286'];
-
-/**
- * 检查是否需要为该用户 dump 请求
- * @returns {boolean}
- */
-function shouldDumpForUser(userId) {
-  return DEBUG_USER_IDS.includes(userId);
-}
-
-/**
- * Dump 用户请求和响应到文件（用于调试特定用户的请求）
- * @param {string} userId - 用户 ID
- * @param {string} requestType - 请求类型 ('antigravity' 或 'kiro')
- * @param {Object} userRequest - 用户原始请求体
- * @param {Object} upstreamRequest - 发送给上游的请求体
- * @param {Object} upstreamResponse - 上游响应数据
- * @param {Object} additionalInfo - 额外信息（如账号信息、模型等）
- */
-async function dumpUserRequestAndResponse(userId, requestType, userRequest, upstreamRequest, upstreamResponse, additionalInfo = {}) {
-  if (!shouldDumpForUser(userId)) {
-    return;
-  }
-
-  try {
-    const fs = await import('fs/promises');
-    const path = await import('path');
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `userdump-${requestType}-${userId.substring(0, 8)}-${timestamp}.json`;
-    const filepath = path.join(process.cwd(), filename);
-
-    const dumpData = {
-      timestamp: new Date().toISOString(),
-      user_id: userId,
-      request_type: requestType,
-      additional_info: additionalInfo,
-      user_request: userRequest,
-      upstream_request: upstreamRequest,
-      upstream_response: upstreamResponse
-    };
-
-    await fs.writeFile(filepath, JSON.stringify(dumpData, null, 2), 'utf8');
-    logger.info(`[DEBUG] 用户请求和响应已转储: ${filepath}`);
-    return filepath;
-  } catch (error) {
-    logger.error('[DEBUG] 转储用户请求和响应失败:', error.message);
-    return null;
-  }
-}
-
 function generateRequestId() {
   return `agent-${randomUUID()}`;
 }
@@ -785,47 +733,6 @@ function generateImageRequestBody(prompt, modelName, imageConfig = {}, account =
 
   return requestBody;
 }
-/**
- * 将错误现场（用户请求、上游请求、上游响应）转储到文件
- * @param {Object} userRequest - 用户原始请求体
- * @param {Object} upstreamRequest - 发送给上游的请求体
- * @param {string|Object} upstreamResponse - 上游返回的响应内容
- * @param {string} errorInfo - 错误信息描述
- */
-async function dumpErrorArtifacts(userRequest, upstreamRequest, upstreamResponse, errorInfo) {
-  try {
-    const fs = await import('fs/promises');
-    const path = await import('path');
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `errordump-${timestamp}.json`;
-    const filepath = path.join(process.cwd(), filename);
-
-    const dumpData = {
-      timestamp: new Date().toISOString(),
-      error: errorInfo,
-      user_request: userRequest,
-      upstream_request: upstreamRequest,
-      upstream_response: upstreamResponse
-    };
-
-    // 如果响应是JSON字符串，尝试解析以便更好阅读
-    if (typeof upstreamResponse === 'string') {
-      try {
-        dumpData.upstream_response_parsed = JSON.parse(upstreamResponse);
-      } catch (e) {
-        // 忽略解析错误
-      }
-    }
-
-    await fs.writeFile(filepath, JSON.stringify(dumpData, null, 2), 'utf8');
-    logger.info(`错误现场已转储至文件: ${filepath}`);
-    return filepath;
-  } catch (error) {
-    logger.error('转储错误现场失败:', error.message);
-    return null;
-  }
-}
 
 export {
   generateRequestId,
@@ -833,7 +740,4 @@ export {
   generateProjectId,
   generateRequestBody,
   generateImageRequestBody,
-  dumpErrorArtifacts,
-  shouldDumpForUser,
-  dumpUserRequestAndResponse
 }
