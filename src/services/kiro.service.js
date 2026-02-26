@@ -67,7 +67,7 @@ const KIRO_DEFAULTS = {
 /**
  * Kiro IDE版本
  */
-const KIRO_IDE_VERSION = '0.6.18';
+const KIRO_IDE_VERSION = '0.10.32';
 
 class KiroService {
   constructor() {

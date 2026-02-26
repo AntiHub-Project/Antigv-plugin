@@ -25,4 +25,5 @@ config.json
 pnpm-lock.yaml
 test/*
 migrations/
-errordump*
+errordump-*
+userdump-*
